@@ -200,9 +200,8 @@ void Command::Buffer::bind(
 }
 
 void Command::Buffer::copy(
-    const VkBuffer source,
-    const VkBuffer destination,
-    const size_t size) {
+    const Resource::Buffer::Object source,
+    const Resource::Buffer::Object destination) {
   TORCH_INTERNAL_ASSERT_DEBUG_ONLY(
       source,
       "Invalid Vulkan source buffer!");
@@ -214,13 +213,13 @@ void Command::Buffer::copy(
   const VkBufferCopy buffer_copy{
     0u,
     0u,
-    size,
+    std::min(source.range, destination.range),
   };
 
   vkCmdCopyBuffer(
       command_buffer_,
-      source,
-      destination,
+      source.handle,
+      destination.handle,
       1u,
       &buffer_copy);
 }

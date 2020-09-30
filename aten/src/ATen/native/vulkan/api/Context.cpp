@@ -101,7 +101,7 @@ Context::Context(const Adapter& adapter)
 
 Context* context() {
   Context* const context = initialize();
-  TORCH_CHECK(context, "Vulkan: Backend not available on this platform!");
+  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(context);
 
   return context;
 }

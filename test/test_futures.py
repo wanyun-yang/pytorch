@@ -92,6 +92,73 @@ class TestFuture(TestCase):
         for i in range(len(futs)):
             self.assertEqual(futs[i].wait(), torch.ones(2, 2) + i + 1)
 
+    def test_add_done_callback_simple(self):
+        callback_result = False
+
+        def callback(fut):
+            nonlocal callback_result
+            fut.wait()
+            callback_result = True
+
+        fut = Future[torch.Tensor]()
+        fut.add_done_callback(callback)
+
+        self.assertFalse(callback_result)
+        fut.set_result(torch.ones(2, 2))
+        self.assertEqual(fut.wait(), torch.ones(2, 2))
+        self.assertTrue(callback_result)
+
+    def test_add_done_callback_maintains_callback_order(self):
+        callback_result = 0
+
+        def callback_set1(fut):
+            nonlocal callback_result
+            fut.wait()
+            callback_result = 1
+
+        def callback_set2(fut):
+            nonlocal callback_result
+            fut.wait()
+            callback_result = 2
+
+        fut = Future[torch.Tensor]()
+        fut.add_done_callback(callback_set1)
+        fut.add_done_callback(callback_set2)
+
+        fut.set_result(torch.ones(2, 2))
+        self.assertEqual(fut.wait(), torch.ones(2, 2))
+        # set2 called last, callback_result = 2
+        self.assertEqual(callback_result, 2)
+
+    def test_interleaving_then_and_add_done_callback_maintains_callback_order(self):
+        callback_result = 0
+
+        def callback_set1(fut):
+            nonlocal callback_result
+            fut.wait()
+            callback_result = 1
+
+        def callback_set2(fut):
+            nonlocal callback_result
+            fut.wait()
+            callback_result = 2
+
+        def callback_then(fut):
+            nonlocal callback_result
+            return fut.wait() + callback_result
+
+        fut = Future[torch.Tensor]()
+        fut.add_done_callback(callback_set1)
+        then_fut = fut.then(callback_then)
+        fut.add_done_callback(callback_set2)
+
+        fut.set_result(torch.ones(2, 2))
+        self.assertEqual(fut.wait(), torch.ones(2, 2))
+        # then_fut's callback is called with callback_result = 1
+        self.assertEqual(then_fut.wait(), torch.ones(2, 2) + 1)
+        # set2 called last, callback_result = 2
+        self.assertEqual(callback_result, 2)
+
     def _test_error(self, cb, errMsg):
         fut = Future[int]()
         then_fut = fut.then(cb)

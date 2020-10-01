@@ -1039,6 +1039,23 @@ class JitRpcTest(
         self.assertEqual(fut.wait(), torch.ones(n, n) + 1 + num_cbs)
 
     @dist_init
+    def test_add_done_callback(self):
+        callback_called = None
+
+        def callback(_fut):
+            nonlocal callback_called
+            callback_called = fut.wait() * 2
+
+        future = rpc.rpc_async(
+            worker_name((self.rank + 1) % self.world_size),
+            script_fork_wait_udf,
+            args=(torch.ones(2),),
+        ).add_done_callback(callback)
+        self.assertFalse(callback_called)
+        self.assertEqual(future.wait(), torch.ones(2) * 2)
+        self.assertEqual(callback_called, torch.ones(2) * 4)
+
+    @dist_init
     def test_async_script_throw(self):
         future = rpc.rpc_async(
             worker_name((self.rank + 1) % self.world_size),

@@ -8,6 +8,7 @@ from pathlib import Path
 from torch.fx import symbolic_trace, Proxy, Node, GraphModule, Tracer, Graph
 from torch.fx.experimental import GraphManipulation
 from torch.fx.experimental import shape_prop
+from torch.fx.experimental.subgraph_creation_example import split_module 
 
 from torch.fx.proxy import TraceError
 
@@ -757,8 +758,42 @@ class TestFX(JitTestCase):
         shape_prop.ShapeProp(tc_traced).propagate(torch.rand(3, 4))
         self.assertEqual(tc_traced.graph.result.shape, ref_out.shape)
 
+    def test_subgraph_creation(self):
+        class MyModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.param = torch.nn.Parameter(torch.rand(3, 4))
+                self.linear = torch.nn.Linear(4, 5)
 
+            def forward(self, x, y):
+                z = self.linear(x + self.param).clamp(min=0.0, max=1.0) 
+                w = self.linear(y).clamp(min=0.0, max=1.0) 
+                return z + w
 
+        # symbolically trace model
+        my_module = MyModule()
+        my_module_traced = symbolic_trace(my_module)
+
+        # random mod partitioning
+        partition_counter = 0
+        NPARTITIONS = 3
+
+        def mod_partition(node: Node):
+            nonlocal partition_counter
+            partition = partition_counter % NPARTITIONS
+            partition_counter = (partition_counter + 1) % NPARTITIONS
+            return partition
+
+        # split module in module with submodules 
+        module_with_submodules = split_module(my_module_traced, my_module, mod_partition)
+
+        x = torch.rand(3, 4)
+        y = torch.rand(3, 4)
+
+        orig_out = my_module_traced(x, y)
+        submodules_out = module_with_submodules(x, y)
+
+        self.assertEqual(orig_out, submodules_out)
 
 if __name__ == '__main__':
     run_tests()
